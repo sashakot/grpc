@@ -29,9 +29,9 @@
 #include <grpcpp/grpcpp.h>
 
 #ifdef BAZEL_BUILD
-#include "examples/protos/helloworld.grpc.pb.h"
+#include "examples/protos/helloworld2.grpc.pb.h"
 #else
-#include "helloworld.grpc.pb.h"
+#include "helloworld2.grpc.pb.h"
 #endif
 
 ABSL_FLAG(uint16_t, port, 50051, "Server port for the service");
@@ -42,9 +42,9 @@ using grpc::ServerBuilder;
 using grpc::ServerCompletionQueue;
 using grpc::ServerContext;
 using grpc::Status;
-using helloworld::Greeter;
-using helloworld::HelloReply;
-using helloworld::HelloRequest;
+using helloworld2::Greeter;
+using helloworld2::HelloReply;
+using helloworld2::HelloRequest;
 
 class ServerImpl final {
  public:

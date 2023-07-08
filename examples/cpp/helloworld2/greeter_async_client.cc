@@ -27,9 +27,9 @@
 #include <grpcpp/grpcpp.h>
 
 #ifdef BAZEL_BUILD
-#include "examples/protos/helloworld.grpc.pb.h"
+#include "examples/protos/helloworld2.grpc.pb.h"
 #else
-#include "helloworld.grpc.pb.h"
+#include "helloworld2.grpc.pb.h"
 #endif
 
 ABSL_FLAG(std::string, target, "localhost:50051", "Server address");
@@ -39,9 +39,9 @@ using grpc::ClientAsyncResponseReader;
 using grpc::ClientContext;
 using grpc::CompletionQueue;
 using grpc::Status;
-using helloworld::Greeter;
-using helloworld::HelloReply;
-using helloworld::HelloRequest;
+using helloworld2::Greeter;
+using helloworld2::HelloReply;
+using helloworld2::HelloRequest;
 
 class GreeterClient {
  public:
