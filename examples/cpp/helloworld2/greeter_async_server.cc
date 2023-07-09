@@ -20,6 +20,8 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
+#include <string>
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
@@ -38,6 +40,7 @@ ABSL_FLAG(uint16_t, port, 50051, "Server port for the service");
 
 using grpc::Server;
 using grpc::ServerAsyncResponseWriter;
+using grpc::ServerAsyncWriter;
 using grpc::ServerBuilder;
 using grpc::ServerCompletionQueue;
 using grpc::ServerContext;
@@ -140,6 +143,96 @@ public:
 	  }
 };
 
+class CallDataWriter: public CallDataBase
+{
+
+	// The means to get back to the client.
+	ServerAsyncWriter<HelloReply> responder_;
+
+	int count_;
+	bool new_responder_created_;
+
+	std::vector<std::string> messages_;
+
+	void InitMessages(const std::string& name) {
+
+		std::stringstream ss;
+
+		ss << this;
+
+		messages_.push_back(prefix_ + name + "!"); 
+		messages_.push_back("How are you doing?"); 
+		messages_.push_back("How can I assist you today?"); 
+		messages_.push_back("I'm a server ID " + ss.str()); 
+
+		//std::copy(messages_.begin(), messages_.end(), std::ostream_iterator<std::string>(std::cout, " "));
+		//std::cout << std::endl;
+	}
+
+public:
+	  CallDataWriter(Greeter::AsyncService* service, ServerCompletionQueue* cq):
+		                  CallDataBase(service, cq), responder_(&ctx_),count_(0),new_responder_created_(false)
+		{
+			// Invoke processing
+			Proceed();
+		}
+
+	  void Proceed(bool = true) override {
+		  if (status_ == CREATE) {
+			  // Make this instance progress to the PROCESS state.
+			  status_ = PROCESS;
+
+			  // As part of the initial CREATE state, we *request* that the system
+			  // start processing SayHello requests. In this request, "this" acts are
+			  // the tag uniquely identifying the request (so that different CallData
+			  // instances can serve different requests concurrently), in this case
+			  // the memory address of this CallData instance.
+
+			  std::cout << "New responder for 1:N mode " << this << std::endl;
+
+			  service_->RequestSayHelloStreamReply(&ctx_, &request_, &responder_, cq_, cq_,
+					  this);
+		  } else if (status_ == PROCESS) {
+
+			  if (!new_responder_created_) {
+				  new_responder_created_ = true;
+				  std::cout << "Create a new instance of responder to serve new client in 1:N mode while this instance is busy with processing request message: " << request_.name()  << std::endl;
+				  // Spawn a new CallDataWriter instance to serve new clients while we process
+				  // the one for this CallDataWriter. The instance will deallocate itself as
+				  // part of its FINISH state.
+				  new CallDataWriter(service_, cq_);
+			  }
+
+			  if (!count_)
+				  InitMessages(request_.name());
+
+
+			  // The actual processing.
+			  
+			  std::cout << "Responder 1:N [" << this << "] count = " << count_ << std::endl;
+			  if (/*ctx_.IsCancelled() || */count_ >= messages_.size()) {
+				  // And we are done! Let the gRPC runtime know we've finished, using the
+				  // memory address of this instance as the uniquely identifying tag for
+				  // the event.
+				  std::cout << "Responder 1:N [" << this << "] Finishing " << std::endl;
+				  status_ = FINISH;
+				  responder_.Finish(Status::OK, (void*)this);
+			  } else {
+				  std::cout << "Responder 1:N [" << this << "] Writing " << messages_.at(count_)<< std::endl;
+				  reply_.set_message(messages_.at(count_));
+				  responder_.Write(reply_, (void*)this);
+				  count_++;
+			  }
+
+		  } else {
+			  GPR_ASSERT(status_ == FINISH);
+			  std::cout << "Delete Responder 1:N [" << this << "]" << std::endl;
+			  // Once in the FINISH state, deallocate ourselves (CallData).
+			  delete this;
+		  }
+	  }
+};
+
 class ServerImpl final {
  public:
   ~ServerImpl() {
@@ -176,6 +269,7 @@ class ServerImpl final {
   void HandleRpcs() {
     // Spawn a new CallData instance to serve new clients.
     new CallData(&service_, cq_.get());
+    new CallDataWriter(&service_, cq_.get());
     void* tag;  // uniquely identifies a request.
     bool ok;
     while (true) {
@@ -186,7 +280,7 @@ class ServerImpl final {
       // tells us whether there is any kind of event or cq_ is shutting down.
       GPR_ASSERT(cq_->Next(&tag, &ok));
       GPR_ASSERT(ok);
-      static_cast<CallData*>(tag)->Proceed();
+      static_cast<CallDataBase*>(tag)->Proceed(ok);
     }
   }
 
